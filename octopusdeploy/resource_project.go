@@ -61,6 +61,7 @@ func resourceProject() *schema.Resource {
 			"deployment_step_iis_website":     getDeploymentStepIISWebsiteSchema(),
 			"deployment_step_inline_script":   getDeploymentStepInlineScriptSchema(),
 			"deployment_step_package_script":  getDeploymentStepPackageScriptSchema(),
+			
 		},
 	}
 }
@@ -232,6 +233,38 @@ func getDeploymentStepInlineScriptSchema() *schema.Schema {
 }
 
 func getDeploymentStepPackageScriptSchema() *schema.Schema {
+	schemaToReturn := &schema.Schema{
+		Type:     schema.TypeList,
+		Optional: true,
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"script_file_name": {
+					Type:        schema.TypeString,
+					Description: "The script file name in the package.",
+					Required:    true,
+				},
+				"script_parameters": {
+					Type:        schema.TypeString,
+					Description: "Parameters expected by the script. Use platform specific calling convention. e.g. -Path #{VariableStoringPath} for PowerShell or -- #{VariableStoringPath} for ScriptCS.",
+					Optional:    true,
+				},
+				"run_on_server": {
+					Type:        schema.TypeBool,
+					Description: "Whether the script runs on the server (true) or target (false)",
+					Optional:    true,
+					Default:     false,
+				},
+			},
+		},
+	}
+
+	schemaToReturn.Elem = addFeedAndPackageDeploymentStepSchema(schemaToReturn.Elem)
+	schemaToReturn.Elem = addStandardDeploymentStepSchema(schemaToReturn.Elem, false)
+
+	return schemaToReturn
+}
+
+func getDeploymentStepPackageSchema() *schema.Schema {
 	schemaToReturn := &schema.Schema{
 		Type:     schema.TypeList,
 		Optional: true,
@@ -580,6 +613,62 @@ func buildDeploymentProcess(d *schema.ResourceData, deploymentProcess *octopusde
 							"Octopus.Action.Package.PackageId":          packageID,
 							"Octopus.Action.Script.ScriptFileName":      scriptFileName,
 							"Octopus.Action.Script.ScriptParameters":    scriptParameters,
+						},
+					},
+				},
+			}
+
+			if targetRolesInterface, ok := localStep["target_roles"]; ok {
+				var targetRoleSlice []string
+
+				targetRoles := targetRolesInterface.([]interface{})
+
+				for _, role := range targetRoles {
+					targetRoleSlice = append(targetRoleSlice, role.(string))
+				}
+
+				deploymentStep.Properties = map[string]string{"Octopus.Action.TargetRoles": strings.Join(targetRoleSlice, ",")}
+			}
+
+			deploymentProcess.Steps = append(deploymentProcess.Steps, *deploymentStep)
+		}
+	}
+
+	if v, ok := d.GetOk("deployment_step_package"); ok {
+		steps := v.([]interface{})
+		for _, raw := range steps {
+
+			localStep := raw.(map[string]interface{})
+
+
+			runOnServer := localStep["run_on_server"].(bool)
+			configurationTransforms := localStep["configuration_transforms"].(bool)
+			configurationVariables := localStep["configuration_variables"].(bool)
+			downloadOnTentacle = localStep["download_on_tentacle"].(bool)
+			feedID := localStep["feed_id"].(string)
+			packageID := localStep["package"].(string)
+			substituteEnabled = localStep["substitute_enabled"].(bool)
+			substituteTargets = localStep["substitute_targets"].(string)
+
+			deploymentStep := &octopusdeploy.DeploymentStep{
+				Name:               stepName,
+				PackageRequirement: "LetOctopusDecide",
+				Condition:          stepCondition,
+				StartTrigger:       stepStartTrigger,
+				Actions: []octopusdeploy.DeploymentAction{
+					{
+						Name:       stepName,
+						ActionType: "Octopus.TentaclePackage",
+						Properties: map[string]string{
+							"Octopus.Action.RunOnServer":                									strconv.FormatBool(runOnServer),
+							"Octopus.Action.EnabledFeatures":												"Octopus.Features.WindowsService,Octopus.Features.ConfigurationTransforms,Octopus.Features.ConfigurationVariables"
+							"Octopus.Action.Package.AutomaticallyRunConfigurationTransformationFiles": 		strconv.FormatBool(configurationTransforms),
+							"Octopus.Action.Package.AutomaticallyUpdateAppSettingsAndConnectionStrings":	strconv.FormatBool(configurationVariables),
+							"Octopus.Action.Package.DownloadOnTentacle": 									strconv.FormatBool(downloadOnTentacle),
+							"Octopus.Action.Package.FeedId":             									feedID,
+							"Octopus.Action.Package.PackageId":          									packageID,
+							"Octopus.Action.SubstituteInFiles.Enabled":      								strconv.FormatBool(substituteEnabled)
+							"Octopus.Action.SubstituteInFiles.TargetFiles":									substituteTargets
 						},
 					},
 				},
