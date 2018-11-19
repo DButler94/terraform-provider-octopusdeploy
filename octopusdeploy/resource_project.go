@@ -61,6 +61,7 @@ func resourceProject() *schema.Resource {
 			"deployment_step_iis_website":     getDeploymentStepIISWebsiteSchema(),
 			"deployment_step_inline_script":   getDeploymentStepInlineScriptSchema(),
 			"deployment_step_package_script":  getDeploymentStepPackageScriptSchema(),
+			"deployment_step_package_extract": 
 			
 		},
 	}
@@ -73,6 +74,25 @@ func addFeedAndPackageDeploymentStepSchema(schemaToAddToo interface{}) *schema.R
 	schemaResource.Schema["feed_id"] = &schema.Schema{
 		Type:        schema.TypeString,
 		Description: "The ID of the feed a package will be found in.",
+		Optional:    true,
+		Default:     "feeds-builtin",
+	}
+
+	schemaResource.Schema["package"] = &schema.Schema{
+		Type:        schema.TypeString,
+		Description: "ID / Name of the package to be deployed.",
+		Required:    true,
+	}
+
+	return schemaResource
+}
+
+func addFeedAndPackageExtractStepSchema(schemaToAddToo interface{}) *schema.Resource {
+	schemaResource := schemaToAddToo.(*schema.Resource)
+
+	schemaResource.Schema["run_on_server"] = &schema.Schema{
+		Type:        schema.TypeBool,
+		Description: "Whether to run the step on the Octopus Server or not",
 		Optional:    true,
 		Default:     "feeds-builtin",
 	}
@@ -264,34 +284,35 @@ func getDeploymentStepPackageScriptSchema() *schema.Schema {
 	return schemaToReturn
 }
 
-func getDeploymentStepPackageSchema() *schema.Schema {
+func getDeploymentStepPackageExtractSchema() *schema.Schema {
+	
 	schemaToReturn := &schema.Schema{
 		Type:     schema.TypeList,
 		Optional: true,
 		Elem: &schema.Resource{
 			Schema: map[string]*schema.Schema{
-				"script_file_name": {
-					Type:        schema.TypeString,
-					Description: "The script file name in the package.",
-					Required:    true,
-				},
-				"script_parameters": {
-					Type:        schema.TypeString,
-					Description: "Parameters expected by the script. Use platform specific calling convention. e.g. -Path #{VariableStoringPath} for PowerShell or -- #{VariableStoringPath} for ScriptCS.",
-					Optional:    true,
-				},
+
 				"run_on_server": {
 					Type:        schema.TypeBool,
 					Description: "Whether the script runs on the server (true) or target (false)",
 					Optional:    true,
 					Default:     false,
 				},
+				"substitute_targets": {
+					Type:		schema.TypeString,
+					Description: "Target files to perform substiution on"
+					Optional: true,
+					Default: "*.json"
+				}
+
+
 			},
 		},
 	}
-
+	
 	schemaToReturn.Elem = addFeedAndPackageDeploymentStepSchema(schemaToReturn.Elem)
 	schemaToReturn.Elem = addStandardDeploymentStepSchema(schemaToReturn.Elem, false)
+	schemaToReturn.Elem = addFeedAndPackageExtractStepSchema(schemaToReturn.Elem)
 
 	return schemaToReturn
 }
@@ -379,6 +400,8 @@ func getDeploymentStepWindowsServiceSchema() *schema.Schema {
 
 	return schemaToReturn
 }
+
+
 
 func buildDeploymentProcess(d *schema.ResourceData, deploymentProcess *octopusdeploy.DeploymentProcess) *octopusdeploy.DeploymentProcess {
 	deploymentProcess.Steps = nil // empty the steps
@@ -634,7 +657,7 @@ func buildDeploymentProcess(d *schema.ResourceData, deploymentProcess *octopusde
 		}
 	}
 
-	if v, ok := d.GetOk("deployment_step_package"); ok {
+	if v, ok := d.GetOk("deployment_step_package_extract"); ok {
 		steps := v.([]interface{})
 		for _, raw := range steps {
 
@@ -664,7 +687,7 @@ func buildDeploymentProcess(d *schema.ResourceData, deploymentProcess *octopusde
 							"Octopus.Action.EnabledFeatures":												"Octopus.Features.WindowsService,Octopus.Features.ConfigurationTransforms,Octopus.Features.ConfigurationVariables"
 							"Octopus.Action.Package.AutomaticallyRunConfigurationTransformationFiles": 		strconv.FormatBool(configurationTransforms),
 							"Octopus.Action.Package.AutomaticallyUpdateAppSettingsAndConnectionStrings":	strconv.FormatBool(configurationVariables),
-							"Octopus.Action.Package.DownloadOnTentacle": 									strconv.FormatBool(downloadOnTentacle),
+							"Octopus.Action.Package.DownloadOnTentacle": 									"False",
 							"Octopus.Action.Package.FeedId":             									feedID,
 							"Octopus.Action.Package.PackageId":          									packageID,
 							"Octopus.Action.SubstituteInFiles.Enabled":      								strconv.FormatBool(substituteEnabled)
